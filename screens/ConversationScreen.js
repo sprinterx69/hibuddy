@@ -12,28 +12,13 @@ import {
 } from 'react-native';
 import { useAudioRecorder, AudioModule, RecordingPresets } from 'expo-audio';
 import * as Speech from 'expo-speech';
+import * as FileSystem from 'expo-file-system';
 import { Colors } from '../constants/colors';
 import { LANGUAGES, getLanguageByCode, getLanguageLabel } from '../constants/languages';
 import { getUserProfile, saveConversation } from '../services/storageService';
 import { transcribeAudio, translateText } from '../services/translationService';
 import Waveform from '../components/Waveform';
 import ChatBubble from '../components/ChatBubble';
-
-// Helper: read a local file URI as base64 using fetch + FileReader
-const readFileAsBase64 = async (uri) => {
-  const response = await fetch(uri);
-  const blob = await response.blob();
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      // result is "data:<mime>;base64,<data>" — strip the prefix
-      const base64 = reader.result.split(',')[1];
-      resolve(base64);
-    };
-    reader.onerror = reject;
-    reader.readAsDataURL(blob);
-  });
-};
 
 export default function ConversationScreen({ navigation }) {
   const [userLang, setUserLang] = useState('en');
@@ -161,8 +146,8 @@ export default function ConversationScreen({ navigation }) {
         return;
       }
 
-      // Read audio file as base64
-      const base64Audio = await readFileAsBase64(uri);
+      // Read audio file as base64 (pass 'base64' as string, not EncodingType enum)
+      const base64Audio = await FileSystem.readAsStringAsync(uri, { encoding: 'base64' });
       console.log('Audio base64 length:', base64Audio?.length || 0);
 
       // Build possible language codes for detection
