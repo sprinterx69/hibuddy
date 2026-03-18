@@ -10,7 +10,7 @@ import {
   FlatList,
   Linking,
 } from 'react-native';
-import { useAudioRecorder, AudioModule, RecordingPresets } from 'expo-audio';
+import { useAudioRecorder, AudioModule, RecordingPresets, IOSOutputFormat, AudioQuality } from 'expo-audio';
 import * as Speech from 'expo-speech';
 import * as FileSystem from 'expo-file-system/legacy';
 import { Colors } from '../constants/colors';
@@ -19,6 +19,25 @@ import { getUserProfile, saveConversation } from '../services/storageService';
 import { transcribeAudio, translateText } from '../services/translationService';
 import Waveform from '../components/Waveform';
 import ChatBubble from '../components/ChatBubble';
+
+// Custom preset: LINEAR16 WAV for Google Speech-to-Text compatibility
+const LINEAR16_PRESET = {
+  extension: '.wav',
+  sampleRate: 16000,
+  numberOfChannels: 1,
+  bitRate: 256000,
+  android: {
+    outputFormat: 'default',
+    audioEncoder: 'default',
+  },
+  ios: {
+    outputFormat: IOSOutputFormat.LINEARPCM,
+    audioQuality: AudioQuality.HIGH,
+    linearPCMBitDepth: 16,
+    linearPCMIsBigEndian: false,
+    linearPCMIsFloat: false,
+  },
+};
 
 export default function ConversationScreen({ navigation }) {
   const [userLang, setUserLang] = useState('en');
@@ -31,7 +50,7 @@ export default function ConversationScreen({ navigation }) {
   const [permissionDenied, setPermissionDenied] = useState(false);
 
   const recordingUriRef = useRef(null);
-  const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY, (status) => {
+  const recorder = useAudioRecorder(LINEAR16_PRESET, (status) => {
     if (status.url) {
       recordingUriRef.current = status.url;
     }

@@ -53,6 +53,8 @@ export const transcribeAudio = async (audioBase64, possibleLanguages = []) => {
 
   const body = {
     config: {
+      encoding: 'LINEAR16',
+      sampleRateHertz: 16000,
       languageCode: possibleLanguages[0] || 'en-US',
       alternativeLanguageCodes: possibleLanguages.slice(1, 4), // API supports up to 3 alternatives
     },
