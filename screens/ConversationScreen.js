@@ -116,6 +116,8 @@ export default function ConversationScreen({ navigation }) {
       setIsListening(true);
       setStatusText('Listening...');
 
+      console.log('Preparing recorder...');
+      await recorder.prepareToRecordAsync();
       console.log('Starting recorder...');
       recorder.record();
       console.log('Recorder started');
