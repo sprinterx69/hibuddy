@@ -48,6 +48,7 @@ const GOOGLE_TRANSLATE_API_KEY = Constants.expoConfig?.extra?.googleTranslateApi
  * }
  */
 export const transcribeAudio = async (audioBase64, possibleLanguages = []) => {
+  console.log('STT API key loaded:', GOOGLE_STT_API_KEY ? `${GOOGLE_STT_API_KEY.substring(0, 8)}...` : 'EMPTY');
   const url = `https://speech.googleapis.com/v1/speech:recognize?key=${GOOGLE_STT_API_KEY}`;
 
   const body = {
@@ -68,6 +69,7 @@ export const transcribeAudio = async (audioBase64, possibleLanguages = []) => {
     });
 
     const data = await response.json();
+    console.log('STT API response:', JSON.stringify(data).substring(0, 500));
 
     if (data.results && data.results.length > 0) {
       const result = data.results[0];
