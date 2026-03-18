@@ -146,9 +146,18 @@ export default function ConversationScreen({ navigation }) {
         return;
       }
 
-      // Read audio file as base64 (pass 'base64' as string, not EncodingType enum)
-      const base64Audio = await FileSystem.readAsStringAsync(uri, { encoding: 'base64' });
-      console.log('Audio base64 length:', base64Audio?.length || 0);
+      // Read audio file as base64
+      console.log('Reading file as base64...');
+      let base64Audio;
+      try {
+        const fileInfo = await FileSystem.getInfoAsync(uri);
+        console.log('File info:', JSON.stringify(fileInfo));
+        base64Audio = await FileSystem.readAsStringAsync(uri, { encoding: 'base64' });
+        console.log('Audio base64 length:', base64Audio?.length || 0);
+      } catch (readErr) {
+        console.error('File read error:', readErr.message || readErr);
+        throw readErr;
+      }
 
       // Build possible language codes for detection
       const userLangData = getLanguageByCode(userLang);
