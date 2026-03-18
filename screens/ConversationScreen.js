@@ -188,11 +188,20 @@ export default function ConversationScreen({ navigation }) {
       console.log('Audio base64 length:', base64Audio?.length || 0);
 
       // Build possible language codes for detection
-      // Google STT allows max 3 alternative languages + 1 primary
+      // Google STT allows 1 primary + up to 3 alternative language codes
       const userLangData = getLanguageByCode(userLang);
       const possibleCodes = [userLangData.speechCode];
       if (otherLang) {
+        // Other language is known — just send user + other
         possibleCodes.push(getLanguageByCode(otherLang).speechCode);
+      } else {
+        // Other language unknown — send all supported languages as alternatives
+        // so Google can auto-detect which language is being spoken
+        LANGUAGES.forEach((l) => {
+          if (l.code !== userLang) {
+            possibleCodes.push(l.speechCode);
+          }
+        });
       }
       console.log('Language codes for STT:', possibleCodes);
 

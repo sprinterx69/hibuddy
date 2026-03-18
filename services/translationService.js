@@ -49,14 +49,15 @@ const GOOGLE_TRANSLATE_API_KEY = Constants.expoConfig?.extra?.googleTranslateApi
  */
 export const transcribeAudio = async (audioBase64, possibleLanguages = []) => {
   console.log('STT API key loaded:', GOOGLE_STT_API_KEY ? `${GOOGLE_STT_API_KEY.substring(0, 8)}...` : 'EMPTY');
-  const url = `https://speech.googleapis.com/v1/speech:recognize?key=${GOOGLE_STT_API_KEY}`;
+  // Use v1p1beta1 for broader alternative language support (more than 3 alternatives)
+  const url = `https://speech.googleapis.com/v1p1beta1/speech:recognize?key=${GOOGLE_STT_API_KEY}`;
 
   const body = {
     config: {
       encoding: 'LINEAR16',
       sampleRateHertz: 16000,
       languageCode: possibleLanguages[0] || 'en-US',
-      alternativeLanguageCodes: possibleLanguages.slice(1, 4), // API supports up to 3 alternatives
+      alternativeLanguageCodes: possibleLanguages.slice(1), // beta API supports more alternatives
     },
     audio: {
       content: audioBase64,
