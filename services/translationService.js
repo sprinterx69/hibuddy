@@ -5,16 +5,12 @@
  * 1. Speech-to-Text (transcription + language detection)
  * 2. Translation (Google Translate API)
  *
- * TODO: Replace the placeholder API keys below with your actual Google Cloud API keys.
- * You need to enable these APIs in your Google Cloud Console:
- * - Cloud Speech-to-Text API
- * - Cloud Translation API
+ * API keys are loaded from .env via app.config.js → expo-constants.
  */
+import Constants from 'expo-constants';
 
-// TODO: Replace with your Google Cloud API key
-// Go to https://console.cloud.google.com/apis/credentials to create one.
-// Make sure to enable "Cloud Speech-to-Text API" and "Cloud Translation API".
-const GOOGLE_API_KEY = 'YOUR_GOOGLE_API_KEY_HERE';
+const GOOGLE_STT_API_KEY = Constants.expoConfig?.extra?.googleSttApiKey || '';
+const GOOGLE_TRANSLATE_API_KEY = Constants.expoConfig?.extra?.googleTranslateApiKey || '';
 
 /**
  * Transcribe audio and detect language using Google Cloud Speech-to-Text API.
@@ -52,7 +48,7 @@ const GOOGLE_API_KEY = 'YOUR_GOOGLE_API_KEY_HERE';
  * }
  */
 export const transcribeAudio = async (audioBase64, possibleLanguages = []) => {
-  const url = `https://speech.googleapis.com/v1/speech:recognize?key=${GOOGLE_API_KEY}`;
+  const url = `https://speech.googleapis.com/v1/speech:recognize?key=${GOOGLE_STT_API_KEY}`;
 
   const body = {
     config: {
@@ -128,7 +124,7 @@ export const transcribeAudio = async (audioBase64, possibleLanguages = []) => {
 export const translateText = async (text, targetLang, sourceLang = null) => {
   if (!text || !targetLang) return '';
 
-  const url = `https://translation.googleapis.com/language/translate/v2?key=${GOOGLE_API_KEY}`;
+  const url = `https://translation.googleapis.com/language/translate/v2?key=${GOOGLE_TRANSLATE_API_KEY}`;
 
   const body = {
     q: text,
