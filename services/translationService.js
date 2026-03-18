@@ -47,48 +47,99 @@ const GOOGLE_TRANSLATE_API_KEY = Constants.expoConfig?.extra?.googleTranslateApi
  *   ]
  * }
  */
-export const transcribeAudio = async (audioBase64, possibleLanguages = []) => {
-  console.log('STT API key loaded:', GOOGLE_STT_API_KEY ? `${GOOGLE_STT_API_KEY.substring(0, 8)}...` : 'EMPTY');
-  // Use v1p1beta1 for broader alternative language support (more than 3 alternatives)
-  const url = `https://speech.googleapis.com/v1p1beta1/speech:recognize?key=${GOOGLE_STT_API_KEY}`;
+/**
+ * Single STT API call with a primary language + up to 3 alternatives.
+ * Returns { transcript, detectedLanguage (short code), confidence }.
+ */
+const sttRecognize = async (audioBase64, primaryLang, alternativeLangs = []) => {
+  const url = `https://speech.googleapis.com/v1/speech:recognize?key=${GOOGLE_STT_API_KEY}`;
 
-  const body = {
-    config: {
-      encoding: 'LINEAR16',
-      sampleRateHertz: 16000,
-      languageCode: possibleLanguages[0] || 'en-US',
-      alternativeLanguageCodes: possibleLanguages.slice(1), // beta API supports more alternatives
-    },
-    audio: {
-      content: audioBase64,
-    },
+  const config = {
+    encoding: 'LINEAR16',
+    sampleRateHertz: 16000,
+    languageCode: primaryLang,
   };
-
-  try {
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-
-    const data = await response.json();
-    console.log('STT API response:', JSON.stringify(data).substring(0, 500));
-
-    if (data.results && data.results.length > 0) {
-      const result = data.results[0];
-      const transcript = result.alternatives[0]?.transcript || '';
-      const detectedLanguage = result.languageCode || possibleLanguages[0] || 'en';
-      return {
-        transcript,
-        detectedLanguage: detectedLanguage.split('-')[0], // Return just 'en', 'es', etc.
-      };
-    }
-
-    return { transcript: '', detectedLanguage: '' };
-  } catch (error) {
-    console.error('Speech-to-Text error:', error);
-    throw new Error('Failed to transcribe audio. Please check your API key and network connection.');
+  // Google STT v1 allows max 3 alternative language codes
+  if (alternativeLangs.length > 0) {
+    config.alternativeLanguageCodes = alternativeLangs.slice(0, 3);
   }
+
+  const body = { config, audio: { content: audioBase64 } };
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+
+  const data = await response.json();
+  console.log('STT response:', JSON.stringify(data).substring(0, 500));
+
+  if (data.error) {
+    console.error('STT API error:', data.error.message);
+    return { transcript: '', detectedLanguage: '', confidence: 0 };
+  }
+
+  if (data.results && data.results.length > 0) {
+    const result = data.results[0];
+    const transcript = result.alternatives[0]?.transcript || '';
+    const confidence = result.alternatives[0]?.confidence || 0;
+    const detectedLanguage = result.languageCode || primaryLang;
+    return {
+      transcript,
+      detectedLanguage: detectedLanguage.split('-')[0],
+      confidence,
+    };
+  }
+
+  return { transcript: '', detectedLanguage: '', confidence: 0 };
+};
+
+/**
+ * Transcribe audio with automatic language detection.
+ *
+ * When multiple language batches are provided, tries the first batch.
+ * If confidence is low (< 0.4), retries with the next batch to find
+ * the correct language. This works around Google STT's 3-alternative limit.
+ *
+ * @param {string} audioBase64 - Base64-encoded LINEAR16 WAV audio
+ * @param {string[][]} languageBatches - Array of [primary, alt1, alt2, alt3] batches
+ * @returns {Promise<{ transcript: string, detectedLanguage: string, confidence: number }>}
+ */
+export const transcribeAudio = async (audioBase64, languageBatches = []) => {
+  console.log('STT API key loaded:', GOOGLE_STT_API_KEY ? `${GOOGLE_STT_API_KEY.substring(0, 8)}...` : 'EMPTY');
+
+  // Support old call format: single flat array of codes
+  if (languageBatches.length > 0 && typeof languageBatches[0] === 'string') {
+    languageBatches = [languageBatches];
+  }
+
+  let bestResult = { transcript: '', detectedLanguage: '', confidence: 0 };
+
+  for (let i = 0; i < languageBatches.length; i++) {
+    const batch = languageBatches[i];
+    const primary = batch[0];
+    const alternatives = batch.slice(1);
+    console.log(`STT batch ${i + 1}/${languageBatches.length}: primary=${primary}, alternatives=${alternatives.join(',')}`);
+
+    try {
+      const result = await sttRecognize(audioBase64, primary, alternatives);
+      console.log(`STT batch ${i + 1} result: lang=${result.detectedLanguage}, confidence=${result.confidence}, text="${result.transcript}"`);
+
+      if (result.transcript && result.confidence > bestResult.confidence) {
+        bestResult = result;
+      }
+
+      // Good enough confidence — no need to try more batches
+      if (result.confidence >= 0.4) {
+        break;
+      }
+    } catch (error) {
+      console.error(`STT batch ${i + 1} error:`, error.message);
+    }
+  }
+
+  return bestResult;
 };
 
 /**
