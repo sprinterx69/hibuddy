@@ -3,6 +3,7 @@ import { ActivityIndicator, View, StyleSheet } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { StatusBar } from 'expo-status-bar';
+import { registerRootComponent } from 'expo';
 
 import OnboardingScreen from './screens/OnboardingScreen';
 import HomeScreen from './screens/HomeScreen';
@@ -13,7 +14,7 @@ import { Colors } from './constants/colors';
 
 const Stack = createNativeStackNavigator();
 
-export default function App() {
+function App() {
   const [isLoading, setIsLoading] = useState(true);
   const [isOnboarded, setIsOnboarded] = useState(false);
 
@@ -37,7 +38,7 @@ export default function App() {
   return (
     <>
       <StatusBar style="dark" />
-      <NavigationContainer linking={{ enabled: false }}>
+      <NavigationContainer>
         <Stack.Navigator
           initialRouteName={isOnboarded ? 'Home' : 'Onboarding'}
           screenOptions={{
@@ -88,3 +89,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.background,
   },
 });
+
+registerRootComponent(App);
+
+export default App;
