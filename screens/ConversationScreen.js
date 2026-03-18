@@ -187,41 +187,61 @@ export default function ConversationScreen({ navigation }) {
       }
       console.log('Audio base64 length:', base64Audio?.length || 0);
 
-      // Build possible language codes for detection
-      // Google STT allows 1 primary + up to 3 alternative language codes
-      const userLangData = getLanguageByCode(userLang);
-      const possibleCodes = [userLangData.speechCode];
-      if (otherLang) {
-        // Other language is known — just send user + other
-        possibleCodes.push(getLanguageByCode(otherLang).speechCode);
-      } else {
-        // Other language unknown — send all supported languages as alternatives
-        // so Google can auto-detect which language is being spoken
-        LANGUAGES.forEach((l) => {
-          if (l.code !== userLang) {
-            possibleCodes.push(l.speechCode);
-          }
-        });
-      }
-      console.log('Language codes for STT:', possibleCodes);
+      // Build language batches for STT detection
+      // Google STT v1 allows max 1 primary + 3 alternatives per request
+      // When otherLang is unknown, we try multiple batches to find the right language
+      const userSpeechCode = getLanguageByCode(userLang).speechCode;
+      let languageBatches;
 
-      // Transcribe and detect language
-      const { transcript, detectedLanguage } = await transcribeAudio(base64Audio, possibleCodes);
+      if (otherLang) {
+        // Other language is known — single batch with user + other
+        const otherSpeechCode = getLanguageByCode(otherLang).speechCode;
+        languageBatches = [[userSpeechCode, otherSpeechCode]];
+      } else {
+        // Other language unknown — try batches of 3 alternatives each
+        // Each batch: [userLang (primary), alt1, alt2, alt3]
+        // Ordered by global speaker count for best chance of quick detection
+        const allOtherCodes = LANGUAGES
+          .filter((l) => l.code !== userLang)
+          .map((l) => l.speechCode);
+
+        languageBatches = [];
+        for (let i = 0; i < allOtherCodes.length; i += 3) {
+          languageBatches.push([
+            userSpeechCode,
+            ...allOtherCodes.slice(i, i + 3),
+          ]);
+        }
+      }
+      console.log('STT language batches:', JSON.stringify(languageBatches));
+
+      // Transcribe with language detection (tries batches until confident)
+      const { transcript, detectedLanguage, confidence } = await transcribeAudio(base64Audio, languageBatches);
+      console.log(`Detected: lang=${detectedLanguage}, confidence=${confidence}, text="${transcript}"`);
 
       if (!transcript) {
-        setStatusText('No speech detected');
-        setTimeout(() => startListening(), 1000);
+        setStatusText('No speech detected — listening...');
+        setTimeout(() => startListening(), 500);
         setIsProcessing(false);
         return;
       }
 
+      // Determine who is speaking based on detected language
       const isUserSpeaking = detectedLanguage === userLang;
 
+      // Auto-detect the other person's language on first non-user speech
       if (!isUserSpeaking && !otherLang) {
+        console.log(`Auto-detected other language: ${detectedLanguage} (${getLanguageLabel(detectedLanguage)})`);
         setOtherLang(detectedLanguage);
+        setStatusText(`Detected ${getLanguageLabel(detectedLanguage)}!`);
       }
 
+      // Determine translation target
       const targetLang = isUserSpeaking ? (otherLang || detectedLanguage) : userLang;
+      setStatusText(isUserSpeaking
+        ? `Translating to ${getLanguageLabel(targetLang)}...`
+        : `Translating to ${getLanguageLabel(userLang)}...`
+      );
       const translated = await translateText(transcript, targetLang, detectedLanguage);
 
       const exchange = {
