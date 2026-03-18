@@ -88,6 +88,11 @@ export default function ConversationScreen({ navigation }) {
       );
       return;
     }
+    // Enable recording on iOS — required before calling recorder.record()
+    await AudioModule.setAudioModeAsync({
+      allowsRecording: true,
+      playsInSilentMode: true,
+    });
     startListening();
   };
 
