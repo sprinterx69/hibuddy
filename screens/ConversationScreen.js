@@ -8,7 +8,7 @@ import {
   Alert,
   Modal,
   FlatList,
-  Platform,
+  Linking,
 } from 'react-native';
 import { useAudioRecorder, AudioModule, RecordingPresets } from 'expo-audio';
 import * as Speech from 'expo-speech';
@@ -26,7 +26,6 @@ const readFileAsBase64 = (uri) =>
     xhr.onload = () => {
       const reader = new FileReader();
       reader.onloadend = () => {
-        // result is "data:<mime>;base64,<data>" — strip the prefix
         const base64 = reader.result.split(',')[1];
         resolve(base64);
       };
@@ -45,8 +44,9 @@ export default function ConversationScreen({ navigation }) {
   const [exchanges, setExchanges] = useState([]);
   const [isListening, setIsListening] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [statusText, setStatusText] = useState('Starting...');
+  const [statusText, setStatusText] = useState('Requesting mic access...');
   const [showLangOverride, setShowLangOverride] = useState(false);
+  const [permissionDenied, setPermissionDenied] = useState(false);
 
   const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const scrollRef = useRef(null);
@@ -58,7 +58,7 @@ export default function ConversationScreen({ navigation }) {
     const init = async () => {
       const profile = await getUserProfile();
       setUserLang(profile.languageCode || 'en');
-      await requestMicPermission();
+      await setupAudio();
     };
     init();
 
@@ -78,22 +78,48 @@ export default function ConversationScreen({ navigation }) {
     Speech.stop();
   };
 
-  const requestMicPermission = async () => {
-    const status = await AudioModule.requestRecordingPermissionsAsync();
-    if (!status.granted) {
+  const setupAudio = async () => {
+    try {
+      // Check current permission status first
+      const currentStatus = await AudioModule.getRecordingPermissionsAsync();
+      console.log('Current mic permission status:', JSON.stringify(currentStatus));
+
+      let granted = currentStatus.granted;
+
+      if (!granted) {
+        // Request permission — this should show the OS dialog
+        const requestResult = await AudioModule.requestRecordingPermissionsAsync();
+        console.log('Requested mic permission result:', JSON.stringify(requestResult));
+        granted = requestResult.granted;
+      }
+
+      if (!granted) {
+        console.log('Mic permission denied');
+        setPermissionDenied(true);
+        setStatusText('Microphone access denied');
+        return;
+      }
+
+      console.log('Mic permission granted, setting audio mode...');
+
+      // Enable recording mode on iOS
+      await AudioModule.setAudioModeAsync({
+        allowsRecording: true,
+        playsInSilentMode: true,
+      });
+
+      console.log('Audio mode set, starting to listen...');
+      setStatusText('Listening...');
+      startListening();
+    } catch (error) {
+      console.error('Audio setup error:', error);
+      setStatusText('Mic setup failed');
       Alert.alert(
-        'Microphone Permission',
-        'HiBuddy needs microphone access to translate conversations. Please enable it in settings.',
+        'Microphone Error',
+        'Could not set up the microphone: ' + (error.message || 'Unknown error'),
         [{ text: 'OK', onPress: () => navigation.goBack() }]
       );
-      return;
     }
-    // Enable recording on iOS — required before calling recorder.record()
-    await AudioModule.setAudioModeAsync({
-      allowsRecording: true,
-      playsInSilentMode: true,
-    });
-    startListening();
   };
 
   const startListening = async () => {
@@ -103,7 +129,9 @@ export default function ConversationScreen({ navigation }) {
       setIsListening(true);
       setStatusText('Listening...');
 
+      console.log('Starting recorder...');
       recorder.record();
+      console.log('Recorder started');
 
       // Auto-stop after 5 seconds, then process
       timerRef.current = setTimeout(() => {
@@ -113,7 +141,7 @@ export default function ConversationScreen({ navigation }) {
       }, 5000);
     } catch (error) {
       console.error('Failed to start recording:', error);
-      setStatusText('Tap to retry');
+      setStatusText('Recording failed — tap Stop and retry');
       setIsListening(false);
     }
   };
@@ -124,7 +152,9 @@ export default function ConversationScreen({ navigation }) {
     setStatusText('Processing...');
 
     try {
+      console.log('Stopping recorder...');
       const uri = await recorder.stop();
+      console.log('Recording URI:', uri);
 
       if (!uri) {
         setStatusText('No audio captured');
@@ -135,6 +165,7 @@ export default function ConversationScreen({ navigation }) {
 
       // Read audio file as base64
       const base64Audio = await readFileAsBase64(uri);
+      console.log('Audio base64 length:', base64Audio?.length || 0);
 
       // Build possible language codes for detection
       const userLangData = getLanguageByCode(userLang);
@@ -229,6 +260,38 @@ export default function ConversationScreen({ navigation }) {
     setOtherLang(langCode);
     setShowLangOverride(false);
   };
+
+  if (permissionDenied) {
+    return (
+      <View style={styles.permissionContainer}>
+        <Text style={styles.permissionTitle}>Microphone Access Needed</Text>
+        <Text style={styles.permissionText}>
+          HiBuddy needs microphone access to listen and translate conversations.
+          Please enable it in your device settings.
+        </Text>
+        <TouchableOpacity
+          style={styles.permissionButton}
+          onPress={() => Linking.openSettings()}
+          activeOpacity={0.8}
+        >
+          <Text style={styles.permissionButtonText}>Open Settings</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.permissionButton, { backgroundColor: Colors.textSecondary, marginTop: 12 }]}
+          onPress={() => setupAudio()}
+          activeOpacity={0.8}
+        >
+          <Text style={styles.permissionButtonText}>Try Again</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={{ marginTop: 24 }}
+          onPress={() => navigation.goBack()}
+        >
+          <Text style={{ fontSize: 16, color: Colors.textSecondary }}>Go Back</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -427,5 +490,37 @@ const styles = StyleSheet.create({
     fontSize: 18,
     color: Colors.danger,
     fontWeight: '600',
+  },
+  permissionContainer: {
+    flex: 1,
+    backgroundColor: Colors.background,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 32,
+  },
+  permissionTitle: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: Colors.text,
+    marginBottom: 16,
+    textAlign: 'center',
+  },
+  permissionText: {
+    fontSize: 16,
+    color: Colors.textSecondary,
+    textAlign: 'center',
+    lineHeight: 24,
+    marginBottom: 32,
+  },
+  permissionButton: {
+    backgroundColor: Colors.primary,
+    paddingVertical: 16,
+    paddingHorizontal: 40,
+    borderRadius: 16,
+  },
+  permissionButtonText: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: '700',
   },
 });
