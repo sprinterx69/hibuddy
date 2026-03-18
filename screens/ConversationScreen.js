@@ -153,7 +153,8 @@ export default function ConversationScreen({ navigation }) {
 
     try {
       console.log('Stopping recorder...');
-      const uri = await recorder.stop();
+      await recorder.stop();
+      const uri = recorder.uri;
       console.log('Recording URI:', uri);
 
       if (!uri) {
