@@ -19,24 +19,21 @@ import { transcribeAudio, translateText } from '../services/translationService';
 import Waveform from '../components/Waveform';
 import ChatBubble from '../components/ChatBubble';
 
-// Helper: read a local file URI as base64 using XMLHttpRequest (works on all platforms)
-const readFileAsBase64 = (uri) =>
-  new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    xhr.onload = () => {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        const base64 = reader.result.split(',')[1];
-        resolve(base64);
-      };
-      reader.onerror = reject;
-      reader.readAsDataURL(xhr.response);
+// Helper: read a local file URI as base64 using fetch + FileReader
+const readFileAsBase64 = async (uri) => {
+  const response = await fetch(uri);
+  const blob = await response.blob();
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      // result is "data:<mime>;base64,<data>" — strip the prefix
+      const base64 = reader.result.split(',')[1];
+      resolve(base64);
     };
-    xhr.onerror = reject;
-    xhr.responseType = 'blob';
-    xhr.open('GET', uri, true);
-    xhr.send();
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
   });
+};
 
 export default function ConversationScreen({ navigation }) {
   const [userLang, setUserLang] = useState('en');
