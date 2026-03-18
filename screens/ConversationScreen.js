@@ -137,8 +137,7 @@ export default function ConversationScreen({ navigation }) {
       console.log('Stopping recorder...');
       await recorder.stop();
       const uri = recorder.uri;
-      console.log('Recording URI:', uri);
-      console.log('DEBUG: about to check uri');
+      console.log('Recording URI v2:', uri, 'FileSystem:', !!FileSystem);
 
       if (!uri) {
         setStatusText('No audio captured');
