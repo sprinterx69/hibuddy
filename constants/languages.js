@@ -12,6 +12,7 @@ export const LANGUAGES = [
   { label: 'Korean', code: 'ko', speechCode: 'ko-KR' },
   { label: 'Italian', code: 'it', speechCode: 'it-IT' },
   { label: 'Hindi', code: 'hi', speechCode: 'hi-IN' },
+  { label: 'Urdu', code: 'ur', speechCode: 'ur-PK' },
   { label: 'Turkish', code: 'tr', speechCode: 'tr-TR' },
   { label: 'Dutch', code: 'nl', speechCode: 'nl-NL' },
   { label: 'Polish', code: 'pl', speechCode: 'pl-PL' },
