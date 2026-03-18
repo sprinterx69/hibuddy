@@ -138,6 +138,7 @@ export default function ConversationScreen({ navigation }) {
       await recorder.stop();
       const uri = recorder.uri;
       console.log('Recording URI:', uri);
+      console.log('DEBUG: about to check uri');
 
       if (!uri) {
         setStatusText('No audio captured');
@@ -147,7 +148,7 @@ export default function ConversationScreen({ navigation }) {
       }
 
       // Read audio file as base64
-      console.log('Reading file as base64...');
+      console.log('FileSystem available:', !!FileSystem, 'readAsStringAsync:', !!FileSystem?.readAsStringAsync);
       let base64Audio;
       try {
         const fileInfo = await FileSystem.getInfoAsync(uri);
