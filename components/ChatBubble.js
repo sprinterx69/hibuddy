@@ -1,14 +1,16 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
-import { Colors } from '../constants/colors';
 
-export default function ChatBubble({ isUser, originalText, translatedText, languageLabel }) {
+export default function ChatBubble({ isUser, originalText, translatedText }) {
   return (
     <View style={[styles.container, isUser ? styles.userBubble : styles.otherBubble]}>
-      <Text style={styles.languageLabel}>{languageLabel}</Text>
-      <Text style={styles.originalText}>{originalText}</Text>
+      <Text style={isUser ? styles.userOriginalText : styles.otherOriginalText}>
+        {originalText}
+      </Text>
       {translatedText ? (
-        <Text style={styles.translatedText}>{translatedText}</Text>
+        <Text style={isUser ? styles.userTranslatedText : styles.otherTranslatedText}>
+          {translatedText}
+        </Text>
       ) : null}
     </View>
   );
@@ -17,41 +19,42 @@ export default function ChatBubble({ isUser, originalText, translatedText, langu
 const styles = StyleSheet.create({
   container: {
     maxWidth: '85%',
-    padding: 14,
-    borderRadius: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 20,
     marginVertical: 4,
-    shadowColor: Colors.shadow,
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.08,
-    shadowRadius: 4,
-    elevation: 2,
   },
   userBubble: {
     alignSelf: 'flex-end',
-    backgroundColor: '#ecfdf5',
-    borderBottomRightRadius: 4,
+    backgroundColor: '#22c55e',
+    borderBottomRightRadius: 6,
   },
   otherBubble: {
     alignSelf: 'flex-start',
-    backgroundColor: Colors.cardBackground,
-    borderBottomLeftRadius: 4,
+    backgroundColor: '#2a2a2a',
+    borderBottomLeftRadius: 6,
   },
-  languageLabel: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: Colors.primary,
-    marginBottom: 4,
+  userOriginalText: {
+    fontSize: 18,
+    color: '#ffffff',
+    lineHeight: 24,
   },
-  originalText: {
-    fontSize: 16,
-    color: Colors.text,
-    lineHeight: 22,
-  },
-  translatedText: {
+  userTranslatedText: {
     fontSize: 14,
-    color: Colors.textSecondary,
+    color: 'rgba(255,255,255,0.75)',
     marginTop: 6,
     fontStyle: 'italic',
+    lineHeight: 20,
+  },
+  otherOriginalText: {
+    fontSize: 18,
+    color: '#ffffff',
+    lineHeight: 24,
+  },
+  otherTranslatedText: {
+    fontSize: 14,
+    color: '#22c55e',
+    marginTop: 6,
     lineHeight: 20,
   },
 });

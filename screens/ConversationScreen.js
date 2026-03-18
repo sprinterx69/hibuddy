@@ -6,18 +6,17 @@ import {
   StyleSheet,
   ScrollView,
   Alert,
-  Modal,
-  FlatList,
+  Animated,
+  Easing,
   Linking,
+  ActivityIndicator,
 } from 'react-native';
-import { useAudioRecorder, AudioModule, RecordingPresets, IOSOutputFormat, AudioQuality } from 'expo-audio';
+import { useAudioRecorder, AudioModule, IOSOutputFormat, AudioQuality } from 'expo-audio';
 import * as Speech from 'expo-speech';
 import * as FileSystem from 'expo-file-system/legacy';
-import { Colors } from '../constants/colors';
 import { LANGUAGES, getLanguageByCode, getLanguageLabel } from '../constants/languages';
 import { getUserProfile, saveConversation } from '../services/storageService';
 import { transcribeAudio, translateText } from '../services/translationService';
-import Waveform from '../components/Waveform';
 import ChatBubble from '../components/ChatBubble';
 
 // Custom preset: LINEAR16 WAV for Google Speech-to-Text compatibility
@@ -46,8 +45,9 @@ export default function ConversationScreen({ navigation }) {
   const [isListening, setIsListening] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [statusText, setStatusText] = useState('Requesting mic access...');
-  const [showLangOverride, setShowLangOverride] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
   const [permissionDenied, setPermissionDenied] = useState(false);
+  const pulseAnim = useRef(new Animated.Value(1)).current;
 
   const recordingUriRef = useRef(null);
   const recorder = useAudioRecorder(LINEAR16_PRESET, (status) => {
@@ -55,10 +55,27 @@ export default function ConversationScreen({ navigation }) {
       recordingUriRef.current = status.url;
     }
   });
-  const scrollRef = useRef(null);
+  const otherScrollRef = useRef(null);
+  const userScrollRef = useRef(null);
   const conversationStart = useRef(Date.now());
   const isStopped = useRef(false);
   const timerRef = useRef(null);
+
+  // Pulsing green dot animation for listening state
+  useEffect(() => {
+    if (isListening) {
+      const loop = Animated.loop(
+        Animated.sequence([
+          Animated.timing(pulseAnim, { toValue: 0.3, duration: 600, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+          Animated.timing(pulseAnim, { toValue: 1, duration: 600, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+        ])
+      );
+      loop.start();
+      return () => loop.stop();
+    } else {
+      pulseAnim.setValue(1);
+    }
+  }, [isListening]);
 
   useEffect(() => {
     const init = async () => {
@@ -258,18 +275,20 @@ export default function ConversationScreen({ navigation }) {
 
       // Speak the translation out loud
       const targetLangData = getLanguageByCode(targetLang);
+      setIsSpeaking(true);
+      setIsProcessing(false);
+      setStatusText('Speaking...');
       Speech.speak(translated, {
         language: targetLangData.speechCode,
         onDone: () => {
+          setIsSpeaking(false);
           if (!isStopped.current) startListening();
         },
         onError: () => {
+          setIsSpeaking(false);
           if (!isStopped.current) startListening();
         },
       });
-
-      setIsProcessing(false);
-      setStatusText('Speaking translation...');
     } catch (error) {
       console.error('Processing error:', error);
       setIsProcessing(false);
@@ -301,10 +320,8 @@ export default function ConversationScreen({ navigation }) {
     navigation.goBack();
   };
 
-  const handleLangOverride = (langCode) => {
-    setOtherLang(langCode);
-    setShowLangOverride(false);
-  };
+  // Derive status mode for the divider pill
+  const statusMode = isSpeaking ? 'speaking' : isProcessing ? 'thinking' : isListening ? 'listening' : 'idle';
 
   if (permissionDenied) {
     return (
@@ -322,7 +339,7 @@ export default function ConversationScreen({ navigation }) {
           <Text style={styles.permissionButtonText}>Open Settings</Text>
         </TouchableOpacity>
         <TouchableOpacity
-          style={[styles.permissionButton, { backgroundColor: Colors.textSecondary, marginTop: 12 }]}
+          style={[styles.permissionButton, { backgroundColor: '#6b7280', marginTop: 12 }]}
           onPress={() => setupAudio()}
           activeOpacity={0.8}
         >
@@ -332,7 +349,7 @@ export default function ConversationScreen({ navigation }) {
           style={{ marginTop: 24 }}
           onPress={() => navigation.goBack()}
         >
-          <Text style={{ fontSize: 16, color: Colors.textSecondary }}>Go Back</Text>
+          <Text style={{ fontSize: 16, color: '#6b7280' }}>Go Back</Text>
         </TouchableOpacity>
       </View>
     );
@@ -340,25 +357,18 @@ export default function ConversationScreen({ navigation }) {
 
   return (
     <View style={styles.container}>
-      {/* Language override button */}
-      <TouchableOpacity
-        style={styles.overrideButton}
-        onPress={() => setShowLangOverride(true)}
-      >
-        <Text style={styles.overrideText}>
-          {otherLang ? getLanguageLabel(otherLang) : 'Auto-detect'}
-        </Text>
-      </TouchableOpacity>
-
-      {/* Other person's half */}
+      {/* ===== TOP HALF — Other person (dark) ===== */}
       <View style={styles.halfTop}>
-        <Text style={styles.halfLabel}>
-          {otherLang ? getLanguageLabel(otherLang) : 'Detecting...'}
-        </Text>
+        <View style={styles.topLangPill}>
+          <Text style={styles.topLangText}>
+            {otherLang ? getLanguageLabel(otherLang) : 'Detecting...'}
+          </Text>
+        </View>
         <ScrollView
           style={styles.chatScroll}
-          ref={scrollRef}
-          onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: true })}
+          ref={otherScrollRef}
+          onContentSizeChange={() => otherScrollRef.current?.scrollToEnd({ animated: true })}
+          contentContainerStyle={styles.chatContent}
         >
           {exchanges
             .filter((e) => !e.isUser)
@@ -368,22 +378,41 @@ export default function ConversationScreen({ navigation }) {
                 isUser={false}
                 originalText={e.originalText}
                 translatedText={e.translatedText}
-                languageLabel={getLanguageLabel(e.originalLang)}
               />
             ))}
         </ScrollView>
       </View>
 
-      {/* Waveform divider */}
-      <View style={styles.divider}>
-        <Waveform active={isListening} />
-        <Text style={styles.statusText}>{statusText}</Text>
+      {/* ===== GREEN DIVIDER with status pill ===== */}
+      <View style={styles.dividerWrapper}>
+        <View style={styles.dividerLine} />
+        <View style={styles.statusPill}>
+          {statusMode === 'listening' && (
+            <Animated.View style={[styles.pulseDot, { opacity: pulseAnim }]} />
+          )}
+          {statusMode === 'thinking' && (
+            <ActivityIndicator size="small" color="#22c55e" style={{ marginRight: 6 }} />
+          )}
+          {statusMode === 'speaking' && (
+            <Text style={styles.statusIcon}>{'))) '}</Text>
+          )}
+          <Text style={styles.statusLabel}>
+            {statusMode === 'listening' ? 'LISTENING'
+              : statusMode === 'thinking' ? 'THINKING'
+              : statusMode === 'speaking' ? 'SPEAKING'
+              : 'READY'}
+          </Text>
+        </View>
       </View>
 
-      {/* User's half */}
+      {/* ===== BOTTOM HALF — User (white) ===== */}
       <View style={styles.halfBottom}>
-        <Text style={styles.halfLabel}>{getLanguageLabel(userLang)}</Text>
-        <ScrollView style={styles.chatScroll}>
+        <ScrollView
+          style={styles.chatScroll}
+          ref={userScrollRef}
+          onContentSizeChange={() => userScrollRef.current?.scrollToEnd({ animated: true })}
+          contentContainerStyle={styles.chatContent}
+        >
           {exchanges
             .filter((e) => e.isUser)
             .map((e) => (
@@ -392,153 +421,161 @@ export default function ConversationScreen({ navigation }) {
                 isUser={true}
                 originalText={e.originalText}
                 translatedText={e.translatedText}
-                languageLabel={getLanguageLabel(e.originalLang)}
               />
             ))}
         </ScrollView>
+        <View style={styles.bottomLangPill}>
+          <Text style={styles.bottomLangText}>{getLanguageLabel(userLang)}</Text>
+        </View>
       </View>
 
-      {/* Stop button */}
-      <TouchableOpacity style={styles.stopButton} onPress={handleStop} activeOpacity={0.8}>
-        <Text style={styles.stopButtonText}>Stop</Text>
-      </TouchableOpacity>
-
-      {/* Language override modal */}
-      <Modal visible={showLangOverride} transparent animationType="slide">
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Select other person's language</Text>
-            <FlatList
-              data={LANGUAGES.filter((l) => l.code !== userLang)}
-              keyExtractor={(item) => item.code}
-              renderItem={({ item }) => (
-                <TouchableOpacity
-                  style={styles.modalItem}
-                  onPress={() => handleLangOverride(item.code)}
-                >
-                  <Text style={styles.modalItemText}>{item.label}</Text>
-                </TouchableOpacity>
-              )}
-            />
-            <TouchableOpacity
-              style={styles.modalCancel}
-              onPress={() => setShowLangOverride(false)}
-            >
-              <Text style={styles.modalCancelText}>Cancel</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
+      {/* ===== Stop button ===== */}
+      <View style={styles.stopWrapper}>
+        <TouchableOpacity style={styles.stopButton} onPress={handleStop} activeOpacity={0.8}>
+          <View style={styles.stopIcon} />
+          <Text style={styles.stopButtonText}>Stop</Text>
+        </TouchableOpacity>
+      </View>
     </View>
   );
 }
 
+const GREEN = '#22c55e';
+const DARK_BG = '#1a1a1a';
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.background,
+    backgroundColor: '#ffffff',
   },
-  overrideButton: {
-    position: 'absolute',
-    top: 50,
-    right: 16,
-    zIndex: 10,
-    backgroundColor: Colors.cardBackground,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: Colors.border,
-  },
-  overrideText: {
-    fontSize: 14,
-    color: Colors.textSecondary,
-  },
+  // ===== TOP HALF (dark) =====
   halfTop: {
     flex: 1,
+    backgroundColor: DARK_BG,
     paddingHorizontal: 16,
     paddingTop: 56,
+    paddingBottom: 8,
   },
+  topLangPill: {
+    alignSelf: 'flex-start',
+    backgroundColor: 'rgba(34,197,94,0.15)',
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 20,
+    marginBottom: 12,
+  },
+  topLangText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: GREEN,
+  },
+  // ===== BOTTOM HALF (white) =====
   halfBottom: {
     flex: 1,
+    backgroundColor: '#ffffff',
     paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 8,
   },
-  halfLabel: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: Colors.primary,
-    textAlign: 'center',
-    marginBottom: 8,
+  bottomLangPill: {
+    alignSelf: 'flex-start',
+    backgroundColor: GREEN,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 20,
+    marginTop: 8,
   },
+  bottomLangText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#ffffff',
+  },
+  // ===== Chat =====
   chatScroll: {
     flex: 1,
   },
-  divider: {
-    alignItems: 'center',
-    paddingVertical: 8,
-    borderTopWidth: 1,
-    borderBottomWidth: 1,
-    borderColor: Colors.border,
+  chatContent: {
+    paddingVertical: 4,
   },
-  statusText: {
+  // ===== DIVIDER =====
+  dividerWrapper: {
+    height: 4,
+    backgroundColor: GREEN,
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 10,
+  },
+  dividerLine: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    height: 4,
+    backgroundColor: GREEN,
+  },
+  statusPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#ffffff',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 2,
+    borderColor: GREEN,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  pulseDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: GREEN,
+    marginRight: 8,
+  },
+  statusIcon: {
+    fontSize: 12,
+    color: GREEN,
+    fontWeight: '700',
+  },
+  statusLabel: {
     fontSize: 13,
-    color: Colors.textSecondary,
-    marginTop: 4,
+    fontWeight: '700',
+    color: '#1a1a1a',
+    letterSpacing: 1,
+  },
+  // ===== STOP BUTTON =====
+  stopWrapper: {
+    alignItems: 'center',
+    paddingBottom: 40,
+    paddingTop: 8,
+    backgroundColor: '#ffffff',
   },
   stopButton: {
-    backgroundColor: Colors.danger,
-    marginHorizontal: 24,
-    marginBottom: 40,
-    paddingVertical: 16,
-    borderRadius: 16,
+    flexDirection: 'row',
     alignItems: 'center',
+    backgroundColor: '#ef4444',
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 24,
+  },
+  stopIcon: {
+    width: 14,
+    height: 14,
+    borderRadius: 3,
+    backgroundColor: '#ffffff',
+    marginRight: 8,
   },
   stopButtonText: {
     color: '#fff',
-    fontSize: 20,
+    fontSize: 16,
     fontWeight: '700',
   },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.4)',
-    justifyContent: 'flex-end',
-  },
-  modalContent: {
-    backgroundColor: Colors.background,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    maxHeight: '60%',
-    padding: 24,
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: Colors.text,
-    marginBottom: 16,
-    textAlign: 'center',
-  },
-  modalItem: {
-    paddingVertical: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
-  },
-  modalItemText: {
-    fontSize: 18,
-    color: Colors.text,
-  },
-  modalCancel: {
-    marginTop: 16,
-    paddingVertical: 14,
-    alignItems: 'center',
-  },
-  modalCancelText: {
-    fontSize: 18,
-    color: Colors.danger,
-    fontWeight: '600',
-  },
+  // ===== PERMISSION SCREEN =====
   permissionContainer: {
     flex: 1,
-    backgroundColor: Colors.background,
+    backgroundColor: '#ffffff',
     justifyContent: 'center',
     alignItems: 'center',
     padding: 32,
@@ -546,19 +583,19 @@ const styles = StyleSheet.create({
   permissionTitle: {
     fontSize: 24,
     fontWeight: '700',
-    color: Colors.text,
+    color: '#1a1a1a',
     marginBottom: 16,
     textAlign: 'center',
   },
   permissionText: {
     fontSize: 16,
-    color: Colors.textSecondary,
+    color: '#6b7280',
     textAlign: 'center',
     lineHeight: 24,
     marginBottom: 32,
   },
   permissionButton: {
-    backgroundColor: Colors.primary,
+    backgroundColor: GREEN,
     paddingVertical: 16,
     paddingHorizontal: 40,
     borderRadius: 16,
