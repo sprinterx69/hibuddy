@@ -8,16 +8,36 @@ import {
   Alert,
   Modal,
   FlatList,
+  Platform,
 } from 'react-native';
-import { Audio } from 'expo-av';
+import { useAudioRecorder, AudioModule, RecordingPresets } from 'expo-audio';
 import * as Speech from 'expo-speech';
-import * as FileSystem from 'expo-file-system';
 import { Colors } from '../constants/colors';
 import { LANGUAGES, getLanguageByCode, getLanguageLabel } from '../constants/languages';
 import { getUserProfile, saveConversation } from '../services/storageService';
 import { transcribeAudio, translateText } from '../services/translationService';
 import Waveform from '../components/Waveform';
 import ChatBubble from '../components/ChatBubble';
+
+// Helper: read a local file URI as base64 using XMLHttpRequest (works on all platforms)
+const readFileAsBase64 = (uri) =>
+  new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.onload = () => {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        // result is "data:<mime>;base64,<data>" — strip the prefix
+        const base64 = reader.result.split(',')[1];
+        resolve(base64);
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(xhr.response);
+    };
+    xhr.onerror = reject;
+    xhr.responseType = 'blob';
+    xhr.open('GET', uri, true);
+    xhr.send();
+  });
 
 export default function ConversationScreen({ navigation }) {
   const [userLang, setUserLang] = useState('en');
@@ -28,10 +48,11 @@ export default function ConversationScreen({ navigation }) {
   const [statusText, setStatusText] = useState('Starting...');
   const [showLangOverride, setShowLangOverride] = useState(false);
 
-  const recording = useRef(null);
+  const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const scrollRef = useRef(null);
   const conversationStart = useRef(Date.now());
   const isStopped = useRef(false);
+  const timerRef = useRef(null);
 
   useEffect(() => {
     const init = async () => {
@@ -43,13 +64,23 @@ export default function ConversationScreen({ navigation }) {
 
     return () => {
       isStopped.current = true;
-      stopRecording();
+      cleanup();
     };
   }, []);
 
+  const cleanup = () => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    try {
+      recorder.stop();
+    } catch (e) {
+      // ignore
+    }
+    Speech.stop();
+  };
+
   const requestMicPermission = async () => {
-    const { status } = await Audio.requestPermissionsAsync();
-    if (status !== 'granted') {
+    const status = await AudioModule.requestRecordingPermissionsAsync();
+    if (!status.granted) {
       Alert.alert(
         'Microphone Permission',
         'HiBuddy needs microphone access to translate conversations. Please enable it in settings.',
@@ -57,10 +88,6 @@ export default function ConversationScreen({ navigation }) {
       );
       return;
     }
-    await Audio.setAudioModeAsync({
-      allowsRecordingIOS: true,
-      playsInSilentModeIOS: true,
-    });
     startListening();
   };
 
@@ -71,15 +98,12 @@ export default function ConversationScreen({ navigation }) {
       setIsListening(true);
       setStatusText('Listening...');
 
-      const { recording: rec } = await Audio.Recording.createAsync(
-        Audio.RecordingOptionsPresets.HIGH_QUALITY
-      );
-      recording.current = rec;
+      recorder.record();
 
-      // Auto-stop after a silence period (simplified: stop after 5 seconds, then process)
-      setTimeout(async () => {
-        if (recording.current && !isStopped.current) {
-          await processRecording();
+      // Auto-stop after 5 seconds, then process
+      timerRef.current = setTimeout(() => {
+        if (!isStopped.current) {
+          processRecording();
         }
       }, 5000);
     } catch (error) {
@@ -90,21 +114,22 @@ export default function ConversationScreen({ navigation }) {
   };
 
   const processRecording = async () => {
-    if (!recording.current) return;
-
     setIsListening(false);
     setIsProcessing(true);
     setStatusText('Processing...');
 
     try {
-      await recording.current.stopAndUnloadAsync();
-      const uri = recording.current.getURI();
-      recording.current = null;
+      const uri = await recorder.stop();
+
+      if (!uri) {
+        setStatusText('No audio captured');
+        setTimeout(() => startListening(), 1000);
+        setIsProcessing(false);
+        return;
+      }
 
       // Read audio file as base64
-      const base64Audio = await FileSystem.readAsStringAsync(uri, {
-        encoding: FileSystem.EncodingType.Base64,
-      });
+      const base64Audio = await readFileAsBase64(uri);
 
       // Build possible language codes for detection
       const userLangData = getLanguageByCode(userLang);
@@ -112,7 +137,6 @@ export default function ConversationScreen({ navigation }) {
       if (otherLang) {
         possibleCodes.push(getLanguageByCode(otherLang).speechCode);
       } else {
-        // Add common languages for initial detection
         LANGUAGES.forEach((l) => {
           if (l.code !== userLang && possibleCodes.length < 4) {
             possibleCodes.push(l.speechCode);
@@ -174,23 +198,11 @@ export default function ConversationScreen({ navigation }) {
     }
   };
 
-  const stopRecording = async () => {
-    try {
-      if (recording.current) {
-        await recording.current.stopAndUnloadAsync();
-        recording.current = null;
-      }
-      Speech.stop();
-    } catch (e) {
-      // Ignore cleanup errors
-    }
-  };
-
   const handleStop = async () => {
     isStopped.current = true;
     setIsListening(false);
     setIsProcessing(false);
-    await stopRecording();
+    cleanup();
 
     if (exchanges.length > 0) {
       const duration = Math.round((Date.now() - conversationStart.current) / 1000);
