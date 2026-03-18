@@ -12,7 +12,7 @@ import {
 } from 'react-native';
 import { useAudioRecorder, AudioModule, RecordingPresets } from 'expo-audio';
 import * as Speech from 'expo-speech';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import { Colors } from '../constants/colors';
 import { LANGUAGES, getLanguageByCode, getLanguageLabel } from '../constants/languages';
 import { getUserProfile, saveConversation } from '../services/storageService';
@@ -147,17 +147,8 @@ export default function ConversationScreen({ navigation }) {
       }
 
       // Read audio file as base64
-      console.log('FileSystem available:', !!FileSystem, 'readAsStringAsync:', !!FileSystem?.readAsStringAsync);
-      let base64Audio;
-      try {
-        const fileInfo = await FileSystem.getInfoAsync(uri);
-        console.log('File info:', JSON.stringify(fileInfo));
-        base64Audio = await FileSystem.readAsStringAsync(uri, { encoding: 'base64' });
-        console.log('Audio base64 length:', base64Audio?.length || 0);
-      } catch (readErr) {
-        console.error('File read error:', readErr.message || readErr);
-        throw readErr;
-      }
+      const base64Audio = await FileSystem.readAsStringAsync(uri, { encoding: 'base64' });
+      console.log('Audio base64 length:', base64Audio?.length || 0);
 
       // Build possible language codes for detection
       const userLangData = getLanguageByCode(userLang);
