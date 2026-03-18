@@ -37,7 +37,7 @@ export default function App() {
   return (
     <>
       <StatusBar style="dark" />
-      <NavigationContainer>
+      <NavigationContainer linking={{ enabled: false }}>
         <Stack.Navigator
           initialRouteName={isOnboarded ? 'Home' : 'Onboarding'}
           screenOptions={{
