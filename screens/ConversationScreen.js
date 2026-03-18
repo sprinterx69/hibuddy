@@ -30,7 +30,12 @@ export default function ConversationScreen({ navigation }) {
   const [showLangOverride, setShowLangOverride] = useState(false);
   const [permissionDenied, setPermissionDenied] = useState(false);
 
-  const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
+  const recordingUriRef = useRef(null);
+  const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY, (status) => {
+    if (status.url) {
+      recordingUriRef.current = status.url;
+    }
+  });
   const scrollRef = useRef(null);
   const conversationStart = useRef(Date.now());
   const isStopped = useRef(false);
@@ -136,8 +141,9 @@ export default function ConversationScreen({ navigation }) {
     try {
       console.log('Stopping recorder...');
       await recorder.stop();
-      const uri = recorder.uri;
-      console.log('Recording URI v2:', uri, 'FileSystem:', !!FileSystem);
+      // Try recorder.uri first, fall back to status callback URL
+      const uri = recorder.uri || recordingUriRef.current;
+      console.log('Recording URI:', uri);
 
       if (!uri) {
         setStatusText('No audio captured');
@@ -146,8 +152,18 @@ export default function ConversationScreen({ navigation }) {
         return;
       }
 
-      // Read audio file as base64
-      const base64Audio = await FileSystem.readAsStringAsync(uri, { encoding: 'base64' });
+      // Read audio file as base64 — retry briefly if file isn't ready yet
+      let base64Audio;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          base64Audio = await FileSystem.readAsStringAsync(uri, { encoding: 'base64' });
+          break;
+        } catch (readErr) {
+          console.log(`File read attempt ${attempt + 1} failed:`, readErr.message);
+          if (attempt < 2) await new Promise(r => setTimeout(r, 300));
+          else throw readErr;
+        }
+      }
       console.log('Audio base64 length:', base64Audio?.length || 0);
 
       // Build possible language codes for detection
